@@ -3,6 +3,8 @@ import re
 import csv
 import concurrent.futures
 
+import numpy as np
+
 # Configuration
 servers = [
     "atl.speedtest.clouvider.net",
@@ -39,13 +41,38 @@ def tracert(server):
     return execute_command(command)
 
 
-def parse_ping_rtt(ping_output):
+def parse_average_ping_rtt(ping_output):
     """Extract RTT values from ping output."""
     match = re.search(r'Medio =\s+(\d+)ms', ping_output)
     if match:
         avg_rtt = float(match.group(1))
         return avg_rtt
     return None
+
+def parse_max_ping_rtt(ping_output):
+    """Extract RTT values from ping output."""
+    match = re.search(r'Massimo =\s+(\d+)ms', ping_output)
+    if match:
+        avg_rtt = float(match.group(1))
+        return avg_rtt
+    return None
+
+def parse_min_ping_rtt(ping_output):
+    """Extract RTT values from ping output."""
+    match = re.search(r'Minimo =\s+(\d+)ms', ping_output)
+    if match:
+        avg_rtt = float(match.group(1))
+        return avg_rtt
+    return None
+
+def parse_standard_deviation_ping_rtt(ping_output):
+    """Extract RTT values from ping output."""
+    matches = re.finditer(r'durata=(\d+)ms', ping_output)
+    durations = []
+    for match in matches:
+        durations.append(int(match.group(1)))
+
+    return np.std(durations)
 
 
 def calculate_hops(traceroute_output):
@@ -58,21 +85,25 @@ def calculate_hops(traceroute_output):
 
 def process_server(server):
     """Process each server by performing traceroute and ping."""
-    print(f"Processing {server}...")
-    traceroute_result = tracert(server)
-    hops = calculate_hops(traceroute_result)
-    print(f"Traceroute to {server} completed with {hops} hops. Output:\n{traceroute_result}")
 
     rtt_results = []
     for payload_size in payload_sizes:
         ping_result = ping(server, payload_size, packet_count)
-        avg_rtt = parse_ping_rtt(ping_result)
-        if avg_rtt is not None:
-            rtt_results.append((server, payload_size, avg_rtt))
-            print(f"Ping to {server} with payload size {payload_size} bytes: avg RTT = {avg_rtt} ms")
+        avg_rtt = parse_average_ping_rtt(ping_result)
+        max_rtt = parse_max_ping_rtt(ping_result)
+        min_rtt = parse_min_ping_rtt(ping_result)
+        std_rtt = parse_standard_deviation_ping_rtt(ping_result)
+        if avg_rtt is not None and max_rtt is not None and min_rtt is not None:
+            rtt_results.append((server, payload_size, avg_rtt, max_rtt, min_rtt, std_rtt))
+            print(f"Ping to {server} with payload size {payload_size} bytes: avg RTT = {avg_rtt} ms, max RTT = {max_rtt}, min RTT = {min_rtt}, max RTT = {std_rtt}")
         else:
             print(
                 f"Failed to parse RTT from ping to {server} with payload size {payload_size} bytes. Output:\n{ping_result}")
+
+    print(f"Processing {server}...")
+    traceroute_result = tracert(server)
+    hops = calculate_hops(traceroute_result)
+    print(f"Traceroute to {server} completed with {hops} hops. Output:\n{traceroute_result}")
     return server, hops, rtt_results
 
 
@@ -93,7 +124,7 @@ def main():
         rtt_writer = csv.writer(rtt_file)
         hops_writer = csv.writer(hops_file)
 
-        rtt_writer.writerow(['server', 'payload_size', 'avg_rtt'])
+        rtt_writer.writerow(['server', 'payload_size', 'avg_rtt', 'max_rtt', 'min_rtt', 'std_rtt'])
         hops_writer.writerow(['server', 'hops'])
 
         for server, hops, rtt_results in results:
